@@ -4,18 +4,24 @@ import * as XLSX from "xlsx";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
 
-type MergedRow = { name: string; title: string; seniority: string; question: string };
+type MergedRow = {
+  name: string;
+  title: string;
+  seniority: string;
+  question: string;
+  date: string;
+  topic: string;
+};
 
 export async function POST(req: Request) {
   const body = await req.json().catch(()=>null);
   if (!body?.rows) return NextResponse.json({ error: "缺少 rows" }, { status: 400 });
 
   const rows: MergedRow[] = body.rows;
-  const aoa = [["工作職稱","工作年資","提問內容","姓名"]];
+  const aoa = [["工作職稱","工作年資","提問內容","日期","主題","姓名"]];
   for (const r of rows) {
-    aoa.push([r.title, r.seniority, r.question, r.name]);
+    aoa.push([r.title, r.seniority, r.question, r.date, r.topic, r.name]);
   }
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();
@@ -30,4 +36,3 @@ export async function POST(req: Request) {
     }
   });
 }
-
