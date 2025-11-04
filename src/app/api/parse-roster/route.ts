@@ -26,36 +26,34 @@ function tryRow(line: string): RosterRow | null {
   if (/^[\d\s\-\.]+$/.test(s)) return null;
 
   // 固定格式：編號 姓名 職位 年資
-  // 按空格分割，應該至少有4個部分
+  // 按空格分割
   const parts = s.split(/\s+/).filter(Boolean);
   
-  // 至少需要4個部分（編號、姓名、職位、年資）
+  // 至少需要3個部分（編號、姓名、其他）
   if (parts.length < 3) return null;
 
   // 第一部分應該是編號（純數字）
   const numberPart = parts[0];
   if (!/^\d+$/.test(numberPart)) {
-    // 如果第一部分不是數字，可能沒有編號，嘗試從第二部分開始
-    // 但這種情況不符合固定格式，跳過
     return null;
   }
 
-  // 最後一部分應該是年資（包含年資提示詞）
+  // 從最後開始尋找年資（包含年資提示詞）
   let seniority = "";
   let seniorityIndex = -1;
   
+  // 先檢查最後一部分
   for (const h of SENIORITY_HINTS) {
-    const lastPart = parts[parts.length - 1];
-    if (lastPart.includes(h)) {
+    if (parts[parts.length - 1].includes(h)) {
       seniority = h;
       seniorityIndex = parts.length - 1;
       break;
     }
   }
   
-  // 如果最後一部分不是年資，嘗試在整行中尋找
+  // 如果最後一部分不是年資，從後往前找
   if (!seniority) {
-    for (let i = parts.length - 1; i >= 0; i--) {
+    for (let i = parts.length - 1; i >= 1; i--) {
       for (const h of SENIORITY_HINTS) {
         if (parts[i].includes(h)) {
           seniority = h;
@@ -68,7 +66,7 @@ function tryRow(line: string): RosterRow | null {
   }
 
   // 如果找到年資，提取姓名和職位
-  if (seniority && seniorityIndex > 0) {
+  if (seniority && seniorityIndex > 1) {
     // 編號在 parts[0]，年資在 parts[seniorityIndex]
     // 姓名和職位在 parts[1] 到 parts[seniorityIndex-1]
     const middleParts = parts.slice(1, seniorityIndex);
@@ -77,44 +75,96 @@ function tryRow(line: string): RosterRow | null {
     
     // 如果只有一個部分，當作姓名（沒有職位）
     if (middleParts.length === 1) {
-      return {
-        name: middleParts[0],
-        title: "",
-        seniority: seniority
-      };
+      const name = middleParts[0];
+      // 驗證姓名（可能包含英文或括號，所以更寬鬆）
+      if (name.length >= 2 && name.length <= 50) {
+        return {
+          name: name.trim(),
+          title: "",
+          seniority: seniority
+        };
+      }
+      return null;
     }
     
-    // 最後一個部分當作職位，前面合併為姓名
-    const title = middleParts.pop()!;
-    const name = middleParts.join("");
+    // 多個部分：最後一個部分當作職位，前面合併為姓名
+    // 但職位可能包含多個詞（如"物理治療師"），所以從後往前找職稱關鍵字
+    let titleIndex = middleParts.length;
+    let title = "";
     
-    if (!name || name.length < 2) return null;
+    // 從後往前找職稱關鍵字
+    const titleKeywords = /治療師|醫師|教練|學生|老師|師|員|者|長|主任|經理|專員|助理|訓練師|防護員|助理|助理/;
+    for (let i = middleParts.length - 1; i >= 0; i--) {
+      if (titleKeywords.test(middleParts[i])) {
+        titleIndex = i;
+        break;
+      }
+    }
     
-    return {
-      name: name.trim(),
-      title: title.trim(),
-      seniority: seniority
-    };
+    // 如果找到職稱關鍵字，從該位置開始到最後都是職位
+    if (titleIndex < middleParts.length) {
+      title = middleParts.slice(titleIndex).join(" ");
+      const name = middleParts.slice(0, titleIndex).join("");
+      
+      if (name && name.length >= 2 && name.length <= 50) {
+        return {
+          name: name.trim(),
+          title: title.trim(),
+          seniority: seniority
+        };
+      }
+    } else {
+      // 如果沒找到職稱關鍵字，最後一個部分當職位
+      title = middleParts[middleParts.length - 1];
+      const name = middleParts.slice(0, middleParts.length - 1).join("");
+      
+      if (name && name.length >= 2 && name.length <= 50) {
+        return {
+          name: name.trim(),
+          title: title.trim(),
+          seniority: seniority
+        };
+      }
+    }
+    
+    return null;
   }
 
   // 如果沒有找到年資提示詞，但格式看起來正確（至少有4部分）
   // 嘗試：編號(0) 姓名(1) 職位(2) 年資(3+)
   if (parts.length >= 4) {
-    const name = parts[1];
-    const title = parts[2];
-    const seniorityPart = parts.slice(3).join(" ");
+    // 嘗試從最後開始找年資（可能沒有包含在提示詞列表中）
+    let possibleSeniority = parts[parts.length - 1];
     
-    // 驗證姓名（應該是中文字）
-    if (/^[一-龥]{2,10}$/.test(name)) {
-      return {
-        name: name.trim(),
-        title: title.trim(),
-        seniority: seniorityPart.trim()
-      };
+    // 如果最後一部分看起來像年資（包含"年"字或數字）
+    if (/年|^\d+/.test(possibleSeniority)) {
+      const name = parts[1];
+      const title = parts.slice(2, parts.length - 1).join(" ");
+      
+      // 驗證姓名（可能包含英文或括號）
+      if (name && name.length >= 2 && name.length <= 50) {
+        return {
+          name: name.trim(),
+          title: title.trim(),
+          seniority: possibleSeniority.trim()
+        };
+      }
+    } else {
+      // 如果最後一部分不是年資，嘗試前三部分
+      const name = parts[1];
+      const title = parts[2];
+      const seniorityPart = parts.slice(3).join(" ");
+      
+      if (name && name.length >= 2 && name.length <= 50) {
+        return {
+          name: name.trim(),
+          title: title.trim(),
+          seniority: seniorityPart.trim()
+        };
+      }
     }
   }
 
-  // 如果格式不符合，返回 null
   return null;
 }
 
@@ -148,28 +198,80 @@ export async function POST(req: Request) {
             for (const page of pdfData.Pages) {
               if (page.Texts && page.Texts.length > 0) {
                 // 按 Y 座標分組（同一行的文字）
-                // 使用更細緻的Y座標分組（容差2像素）
-                const lines: { [y: number]: Array<{x: number, text: string}> } = {};
+                // 使用更大的容差（10像素）來處理表格行
+                const lines: { [y: number]: Array<{x: number, text: string, w?: number}> } = {};
                 
+                // 收集所有文字區塊
+                const textBlocks: Array<{x: number, y: number, text: string, w?: number}> = [];
                 for (const textItem of page.Texts) {
                   if (textItem.R && textItem.R[0]) {
                     const decodedText = decodeURIComponent(textItem.R[0].T || "");
                     if (decodedText.trim()) {
-                      // 增加容差到5像素，更好地處理同一行的文字
-                      const y = Math.round((textItem.y || 0) / 5) * 5;
                       const x = textItem.x || 0;
-                      if (!lines[y]) lines[y] = [];
-                      lines[y].push({ x, text: decodedText });
+                      const y = textItem.y || 0;
+                      const w = textItem.w || 0;
+                      textBlocks.push({ x, y, text: decodedText, w });
                     }
                   }
                 }
                 
-                // 按 Y 座標排序（從上到下），然後每行內按 X 座標排序（從左到右）
-                const sortedYs = Object.keys(lines).map(Number).sort((a, b) => b - a); // 從上到下
+                // 按 Y 座標分組（容差10像素）
+                for (const block of textBlocks) {
+                  // 使用較大的容差，將相近Y座標的文字歸為同一行
+                  const y = Math.round(block.y / 10) * 10;
+                  if (!lines[y]) lines[y] = [];
+                  lines[y].push({ x: block.x, text: block.text, w: block.w });
+                }
+                
+                // 按 Y 座標排序（從上到下）
+                const sortedYs = Object.keys(lines).map(Number).sort((a, b) => b - a);
+                
                 for (const y of sortedYs) {
                   const lineItems = lines[y].sort((a, b) => a.x - b.x); // 從左到右
+                  
+                  // 嘗試識別表格結構：如果X座標有明顯的間隔，可能是表格欄位
+                  // 通常表格欄位之間會有較大的間距
                   const lineText = lineItems.map(item => item.text).join(" ");
-                  fullText += lineText + "\n";
+                  
+                  // 如果這一行看起來像表格行（有明顯的間隔），嘗試更智能的合併
+                  if (lineItems.length > 2) {
+                    // 檢查X座標間距，如果間距很大（可能是表格欄位分隔）
+                    let prevX = 0;
+                    let parts: string[] = [];
+                    let currentPart = "";
+                    
+                    for (let i = 0; i < lineItems.length; i++) {
+                      const item = lineItems[i];
+                      const gap = item.x - prevX;
+                      
+                      // 如果間距很大（>100像素），可能是新欄位的開始
+                      if (gap > 100 && currentPart) {
+                        parts.push(currentPart.trim());
+                        currentPart = item.text;
+                      } else {
+                        // 如果間距很小（<50像素），可能是同一欄位內的文字
+                        if (currentPart) {
+                          currentPart += " " + item.text;
+                        } else {
+                          currentPart = item.text;
+                        }
+                      }
+                      prevX = item.x + (item.w || 0);
+                    }
+                    
+                    if (currentPart) {
+                      parts.push(currentPart.trim());
+                    }
+                    
+                    // 如果成功識別出多個部分，用空格連接（保持表格格式）
+                    if (parts.length >= 3) {
+                      fullText += parts.join(" ") + "\n";
+                    } else {
+                      fullText += lineText + "\n";
+                    }
+                  } else {
+                    fullText += lineText + "\n";
+                  }
                 }
               }
             }
@@ -284,4 +386,5 @@ export async function POST(req: Request) {
     );
   }
 }
+
 
