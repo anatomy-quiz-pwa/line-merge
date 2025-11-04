@@ -14,95 +14,108 @@ const SENIORITY_HINTS = [
 
 function tryRow(line: string): RosterRow | null {
   const s = line.replace(/\s+/g," ").trim();
-  // 粗略濾掉表頭
+  
+  // 過濾表頭和無效行
   if (/^編號\s*姓名\s*背景\s*年資$/.test(s)) return null;
-  if (/^編號/.test(s) && /姓名/.test(s)) return null; // 更寬鬆的表頭過濾
-  if (s.length < 2) return null; // 太短的行跳過
-  if (/^第\d+頁/.test(s) || /^頁碼/.test(s)) return null; // 跳過頁碼
+  if (/^編號/.test(s) && /姓名/.test(s) && s.length < 30) return null; // 表頭
+  if (s.length < 2) return null;
+  if (/^第\d+頁/.test(s) || /^頁碼/.test(s)) return null;
+  if (/^共\d+/.test(s) || /^總計/.test(s)) return null;
+  
+  // 如果整行都是數字或特殊符號，跳過
+  if (/^[\d\s\-\.]+$/.test(s)) return null;
 
-  // 嘗試找到年資提示詞（可能在結尾或中間）
-  let hint: string | null = null;
-  let hintIndex = -1;
+  // 固定格式：編號 姓名 職位 年資
+  // 按空格分割，應該至少有4個部分
+  const parts = s.split(/\s+/).filter(Boolean);
+  
+  // 至少需要4個部分（編號、姓名、職位、年資）
+  if (parts.length < 3) return null;
+
+  // 第一部分應該是編號（純數字）
+  const numberPart = parts[0];
+  if (!/^\d+$/.test(numberPart)) {
+    // 如果第一部分不是數字，可能沒有編號，嘗試從第二部分開始
+    // 但這種情況不符合固定格式，跳過
+    return null;
+  }
+
+  // 最後一部分應該是年資（包含年資提示詞）
+  let seniority = "";
+  let seniorityIndex = -1;
   
   for (const h of SENIORITY_HINTS) {
-    const idx = s.lastIndexOf(h);
-    if (idx > -1) {
-      hint = h;
-      hintIndex = idx;
+    const lastPart = parts[parts.length - 1];
+    if (lastPart.includes(h)) {
+      seniority = h;
+      seniorityIndex = parts.length - 1;
       break;
     }
   }
-
-  // 如果有年資提示詞，用原邏輯
-  if (hint && hintIndex > -1) {
-    const left = s.slice(0, hintIndex).trim();
-    const parts = left.split(/\s+/).filter(Boolean);
-    if (parts.length < 1) return null;
-
-    // 去掉前導編號
-    if (/^\d+$/.test(parts[0])) parts.shift();
-
-    // 如果只有一個部分，可能是姓名（沒有職稱）
-    if (parts.length === 1) {
-      return { name: parts[0], title: "", seniority: hint };
-    }
-
-    // 估計最後一段為「背景/職稱」，前面合併為姓名
-    const title = parts.pop()!;
-    const name = parts.join(" ").trim();
-    if (!name) return null;
-
-    return { name, title: title || "", seniority: hint };
-  }
-
-  // 如果沒有年資提示詞，嘗試更寬鬆的解析
-  // 格式可能是：編號 姓名 職稱 或 姓名 職稱
-  const parts = s.split(/\s+/).filter(Boolean);
-  if (parts.length < 2) return null;
-
-  let startIdx = 0;
-  // 去掉前導編號
-  if (/^\d+$/.test(parts[0])) startIdx = 1;
-
-  if (parts.length <= startIdx) return null;
-
-  // 嘗試識別姓名（通常是2-4個中文字）
-  // 姓名通常在開頭，職稱在後面
-  const namePattern = /^[一-龥]{2,4}$/;
   
-  // 從startIdx開始，找到第一個看起來像姓名的部分
-  let nameIdx = startIdx;
-  let name = "";
-  let title = "";
-  
-  // 如果第一個部分看起來像姓名
-  if (namePattern.test(parts[startIdx])) {
-    name = parts[startIdx];
-    // 剩餘部分可能是職稱
-    if (parts.length > startIdx + 1) {
-      title = parts.slice(startIdx + 1).join(" ");
-    }
-  } else {
-    // 嘗試合併前幾個字作為姓名
-    let nameParts: string[] = [];
-    for (let i = startIdx; i < parts.length; i++) {
-      if (namePattern.test(parts[i])) {
-        nameParts.push(parts[i]);
-      } else {
-        break;
+  // 如果最後一部分不是年資，嘗試在整行中尋找
+  if (!seniority) {
+    for (let i = parts.length - 1; i >= 0; i--) {
+      for (const h of SENIORITY_HINTS) {
+        if (parts[i].includes(h)) {
+          seniority = h;
+          seniorityIndex = i;
+          break;
+        }
       }
-    }
-    if (nameParts.length > 0) {
-      name = nameParts.join("");
-      if (parts.length > startIdx + nameParts.length) {
-        title = parts.slice(startIdx + nameParts.length).join(" ");
-      }
+      if (seniority) break;
     }
   }
 
-  if (!name || name.length < 2) return null;
+  // 如果找到年資，提取姓名和職位
+  if (seniority && seniorityIndex > 0) {
+    // 編號在 parts[0]，年資在 parts[seniorityIndex]
+    // 姓名和職位在 parts[1] 到 parts[seniorityIndex-1]
+    const middleParts = parts.slice(1, seniorityIndex);
+    
+    if (middleParts.length === 0) return null;
+    
+    // 如果只有一個部分，當作姓名（沒有職位）
+    if (middleParts.length === 1) {
+      return {
+        name: middleParts[0],
+        title: "",
+        seniority: seniority
+      };
+    }
+    
+    // 最後一個部分當作職位，前面合併為姓名
+    const title = middleParts.pop()!;
+    const name = middleParts.join("");
+    
+    if (!name || name.length < 2) return null;
+    
+    return {
+      name: name.trim(),
+      title: title.trim(),
+      seniority: seniority
+    };
+  }
 
-  return { name, title: title || "", seniority: "" };
+  // 如果沒有找到年資提示詞，但格式看起來正確（至少有4部分）
+  // 嘗試：編號(0) 姓名(1) 職位(2) 年資(3+)
+  if (parts.length >= 4) {
+    const name = parts[1];
+    const title = parts[2];
+    const seniorityPart = parts.slice(3).join(" ");
+    
+    // 驗證姓名（應該是中文字）
+    if (/^[一-龥]{2,10}$/.test(name)) {
+      return {
+        name: name.trim(),
+        title: title.trim(),
+        seniority: seniorityPart.trim()
+      };
+    }
+  }
+
+  // 如果格式不符合，返回 null
+  return null;
 }
 
 export async function POST(req: Request) {
@@ -142,7 +155,8 @@ export async function POST(req: Request) {
                   if (textItem.R && textItem.R[0]) {
                     const decodedText = decodeURIComponent(textItem.R[0].T || "");
                     if (decodedText.trim()) {
-                      const y = Math.round((textItem.y || 0) / 2) * 2; // 容差2像素
+                      // 增加容差到5像素，更好地處理同一行的文字
+                      const y = Math.round((textItem.y || 0) / 5) * 5;
                       const x = textItem.x || 0;
                       if (!lines[y]) lines[y] = [];
                       lines[y].push({ x, text: decodedText });
@@ -169,33 +183,76 @@ export async function POST(req: Request) {
       const lines = text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
 
       const rows: RosterRow[] = [];
-      const seen = new Set<string>();
+      const rowMap = new Map<number, RosterRow>(); // 用編號作為key，避免重複
       
-      // 第一輪：嘗試解析所有行
+      // 解析所有行
       for (const line of lines) {
         const r = tryRow(line);
-        if (r && r.name && !seen.has(r.name)) { 
-          rows.push(r); 
-          seen.add(r.name); 
+        if (r && r.name && r.name.length >= 2) {
+          // 從原始行中提取編號（如果有的話）
+          const parts = line.replace(/\s+/g," ").trim().split(/\s+/);
+          if (parts.length > 0 && /^\d+$/.test(parts[0])) {
+            const number = parseInt(parts[0], 10);
+            // 如果這個編號已經存在，跳過（可能是重複解析）
+            if (!rowMap.has(number)) {
+              rowMap.set(number, r);
+              rows.push(r);
+            }
+          } else {
+            // 如果無法提取編號，直接加入（但可能會有重複）
+            rows.push(r);
+          }
         }
       }
       
-      console.log(`第一輪解析結果: ${rows.length} 筆`);
+      // 按編號排序（如果有的話）
+      const rowsWithNumbers = rows.map((r, idx) => {
+        const line = lines.find(l => {
+          const parts = l.replace(/\s+/g," ").trim().split(/\s+/);
+          if (parts.length > 0 && /^\d+$/.test(parts[0])) {
+            const parsed = tryRow(l);
+            return parsed && parsed.name === r.name && parsed.title === r.title;
+          }
+          return false;
+        });
+        if (line) {
+          const parts = line.replace(/\s+/g," ").trim().split(/\s+/);
+          const number = /^\d+$/.test(parts[0]) ? parseInt(parts[0], 10) : idx + 1;
+          return { row: r, number };
+        }
+        return { row: r, number: idx + 1 };
+      });
+      
+      rowsWithNumbers.sort((a, b) => a.number - b.number);
+      const sortedRows = rowsWithNumbers.map(item => item.row);
+      
+      const maxNumber = Math.max(...rowsWithNumbers.map(item => item.number), 0);
+      
+      console.log(`解析結果: ${sortedRows.length} 筆 (最大編號: ${maxNumber})`);
       
       // 如果解析結果太少，輸出一些範例行以供調試
-      if (rows.length < 100) {
-        console.log(`解析結果較少，前20行範例:`);
-        lines.slice(0, 20).forEach((line, idx) => {
-          console.log(`${idx + 1}: ${line.substring(0, 100)}`);
+      if (sortedRows.length < maxNumber * 0.5) {
+        console.log(`⚠️ 警告: 解析結果 (${sortedRows.length}) 遠少於最大編號 (${maxNumber})`);
+        console.log(`前50行原始內容:`);
+        lines.slice(0, 50).forEach((line, idx) => {
+          console.log(`${idx + 1}: ${line.substring(0, 150)}`);
+        });
+        console.log(`成功解析的範例 (前10筆):`);
+        sortedRows.slice(0, 10).forEach((r, idx) => {
+          console.log(`${idx + 1}: ${r.name} | ${r.title} | ${r.seniority}`);
         });
       }
-      if (rows.length === 0) {
+      if (sortedRows.length === 0) {
         return NextResponse.json({ error: "未解析到資料，請檢查 PDF 排版" }, { 
           status: 422,
           headers: { "Content-Type": "application/json" }
         });
       }
-      return NextResponse.json({ rows }, {
+      return NextResponse.json({ 
+        rows: sortedRows,
+        maxNumber: maxNumber,
+        totalFound: sortedRows.length
+      }, {
         headers: { "Content-Type": "application/json" }
       });
     } catch (pdfError) {
