@@ -59,19 +59,34 @@ export async function POST(req: Request) {
         });
         
         pdfParser.on("pdfParser_dataReady", (pdfData: any) => {
-          // 提取所有頁面的文字
+          // 提取所有頁面的文字，按行排列
           let fullText = "";
           if (pdfData.Pages) {
             for (const page of pdfData.Pages) {
-              if (page.Texts) {
+              if (page.Texts && page.Texts.length > 0) {
+                // 按 Y 座標分組（同一行的文字）
+                const lines: { [y: string]: Array<{x: number, text: string}> } = {};
+                
                 for (const textItem of page.Texts) {
                   if (textItem.R && textItem.R[0]) {
-                    // 解碼文字（可能是 URI 編碼）
                     const decodedText = decodeURIComponent(textItem.R[0].T || "");
-                    fullText += decodedText + " ";
+                    if (decodedText.trim()) {
+                      // 使用 Y 座標作為行標識（四捨五入到整數以避免浮點誤差）
+                      const y = Math.round(textItem.y || 0);
+                      const x = textItem.x || 0;
+                      if (!lines[y]) lines[y] = [];
+                      lines[y].push({ x, text: decodedText });
+                    }
                   }
                 }
-                fullText += "\n";
+                
+                // 按 Y 座標排序（從上到下），然後每行內按 X 座標排序（從左到右）
+                const sortedYs = Object.keys(lines).map(Number).sort((a, b) => b - a); // 從上到下
+                for (const y of sortedYs) {
+                  const lineItems = lines[y].sort((a, b) => a.x - b.x); // 從左到右
+                  const lineText = lineItems.map(item => item.text).join(" ");
+                  fullText += lineText + "\n";
+                }
               }
             }
           }
