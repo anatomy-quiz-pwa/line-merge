@@ -4,6 +4,7 @@ import { compareTwoStrings } from "string-similarity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 type RosterRow = { name: string; title: string; seniority: string; };
 type MergedRow = { name: string; title: string; seniority: string; question: string; matchScore: number };

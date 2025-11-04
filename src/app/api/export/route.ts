@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 type MergedRow = { name: string; title: string; seniority: string; question: string };
 

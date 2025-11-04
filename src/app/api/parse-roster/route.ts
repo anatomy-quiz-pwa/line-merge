@@ -4,6 +4,7 @@ import { PDFParse } from "pdf-parse";
 
 export const runtime = "nodejs"; // Vercel Node 函式
 export const dynamic = "force-dynamic";
+export const maxDuration = 60; // Vercel 最大執行時間（秒）
 
 type RosterRow = { name: string; title: string; seniority: string; };
 
