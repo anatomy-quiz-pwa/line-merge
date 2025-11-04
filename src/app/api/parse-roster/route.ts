@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import "server-only";
-import pdfParse from "pdf-parse";
+import { PDFParse } from "pdf-parse";
 
 export const runtime = "nodejs"; // Vercel Node 函式
 export const dynamic = "force-dynamic";
@@ -40,8 +40,9 @@ export async function POST(req: Request) {
   if (!file) return NextResponse.json({ error: "缺少檔案" }, { status: 400 });
 
   const buf = Buffer.from(await file.arrayBuffer());
-  const pdf = await pdfParse(buf);
-  const lines = pdf.text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  const parser = new PDFParse(buf);
+  const textResult = await parser.getText();
+  const lines = textResult.text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
 
   const rows: RosterRow[] = [];
   const seen = new Set<string>();
