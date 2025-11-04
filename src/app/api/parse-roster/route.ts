@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import "server-only";
-import { PDFParse } from "pdf-parse";
+import PDFParser from "pdf2json";
 
 export const runtime = "nodejs"; // Vercel Node 函式
 export const dynamic = "force-dynamic";
@@ -47,18 +47,41 @@ export async function POST(req: Request) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
+    const buffer = Buffer.from(arrayBuffer);
     
     try {
-      // 在 Node.js 環境中禁用 worker 並直接傳遞 data
-      const parser = new PDFParse({
-        data: uint8Array,
-        useWorkerFetch: false,
-        verbosity: 0
+      // 使用 pdf2json 解析 PDF（純 Node.js，適合 serverless）
+      const pdfParser = new PDFParser();
+      
+      const text = await new Promise<string>((resolve, reject) => {
+        pdfParser.on("pdfParser_dataError", (errData: any) => {
+          reject(new Error(errData.parserError));
+        });
+        
+        pdfParser.on("pdfParser_dataReady", (pdfData: any) => {
+          // 提取所有頁面的文字
+          let fullText = "";
+          if (pdfData.Pages) {
+            for (const page of pdfData.Pages) {
+              if (page.Texts) {
+                for (const textItem of page.Texts) {
+                  if (textItem.R && textItem.R[0]) {
+                    // 解碼文字（可能是 URI 編碼）
+                    const decodedText = decodeURIComponent(textItem.R[0].T || "");
+                    fullText += decodedText + " ";
+                  }
+                }
+                fullText += "\n";
+              }
+            }
+          }
+          resolve(fullText);
+        });
+        
+        pdfParser.parseBuffer(buffer);
       });
       
-      const textResult = await parser.getText();
-      const lines = textResult.text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+      const lines = text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
 
       const rows: RosterRow[] = [];
       const seen = new Set<string>();
