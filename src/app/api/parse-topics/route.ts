@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import "server-only";
 import * as XLSX from "xlsx";
-import pdfParse from "pdf-parse";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,8 +34,10 @@ export async function POST(req: Request) {
       if (date && topic) rows.push({ date, topic });
     }
   } else if (name.endsWith(".pdf")) {
+    const pdfParseModule = await import("pdf-parse");
+    const pdfParse = (pdfParseModule as any).default || pdfParseModule;
     const pdf = await pdfParse(buf);
-    const lines = pdf.text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+    const lines = pdf.text.split(/\r?\n/).map((s: string)=>s.trim()).filter(Boolean);
     for (const ln of lines) {
       const dm = ln.match(/(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/);
       if (!dm) continue;
