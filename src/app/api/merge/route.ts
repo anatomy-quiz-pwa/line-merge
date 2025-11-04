@@ -1,6 +1,25 @@
 import { NextResponse } from "next/server";
 import "server-only";
-import { compareTwoStrings } from "string-similarity";
+
+// 簡單的字符串相似度計算（基於 Dice coefficient）
+function compareTwoStrings(str1: string, str2: string): number {
+  if (str1 === str2) return 1;
+  if (str1.length < 2 || str2.length < 2) return 0;
+  
+  const pairs1 = getBigrams(str1);
+  const pairs2 = getBigrams(str2);
+  const intersection = pairs1.filter(pair => pairs2.includes(pair));
+  
+  return (2 * intersection.length) / (pairs1.length + pairs2.length);
+}
+
+function getBigrams(str: string): string[] {
+  const bigrams: string[] = [];
+  for (let i = 0; i < str.length - 1; i++) {
+    bigrams.push(str.slice(i, i + 2));
+  }
+  return bigrams;
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
