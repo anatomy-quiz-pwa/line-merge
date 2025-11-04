@@ -19,6 +19,16 @@ export default function Home() {
       const fd = new FormData();
       fd.append("file", pdfFile);
       const res = await fetch("/api/parse-roster", { method: "POST", body: fd });
+      
+      // 檢查回應類型
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await res.text();
+        setLoading(false);
+        alert(`解析失敗：伺服器返回非 JSON 格式 (${res.status})`);
+        return;
+      }
+      
       const data = await res.json();
       setLoading(false);
       if (!res.ok) {
@@ -42,6 +52,15 @@ export default function Home() {
       fd.append("file", txtFile);
       fd.append("roster", JSON.stringify(roster));
       const res = await fetch("/api/merge", { method: "POST", body: fd });
+      
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await res.text();
+        setLoading(false);
+        alert(`合併失敗：伺服器返回非 JSON 格式 (${res.status})`);
+        return;
+      }
+      
       const data = await res.json();
       setLoading(false);
       if (!res.ok) {

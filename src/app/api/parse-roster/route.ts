@@ -38,36 +38,68 @@ export async function POST(req: Request) {
   try {
     const form = await req.formData();
     const file = form.get("file") as File | null;
-    if (!file) return NextResponse.json({ error: "缺少檔案" }, { status: 400 });
+    if (!file) {
+      return NextResponse.json({ error: "缺少檔案" }, { 
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
 
     const arrayBuffer = await file.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
     
-    // 在 Node.js 環境中禁用 worker 並直接傳遞 data
-    const parser = new PDFParse({
-      data: uint8Array,
-      useWorkerFetch: false,
-      verbosity: 0
-    });
-    
-    const textResult = await parser.getText();
-    const lines = textResult.text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+    try {
+      // 在 Node.js 環境中禁用 worker 並直接傳遞 data
+      const parser = new PDFParse({
+        data: uint8Array,
+        useWorkerFetch: false,
+        verbosity: 0
+      });
+      
+      const textResult = await parser.getText();
+      const lines = textResult.text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
 
-    const rows: RosterRow[] = [];
-    const seen = new Set<string>();
-    for (const line of lines) {
-      const r = tryRow(line);
-      if (r && !seen.has(r.name)) { rows.push(r); seen.add(r.name); }
+      const rows: RosterRow[] = [];
+      const seen = new Set<string>();
+      for (const line of lines) {
+        const r = tryRow(line);
+        if (r && !seen.has(r.name)) { rows.push(r); seen.add(r.name); }
+      }
+      if (rows.length === 0) {
+        return NextResponse.json({ error: "未解析到資料，請檢查 PDF 排版" }, { 
+          status: 422,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      return NextResponse.json({ rows }, {
+        headers: { "Content-Type": "application/json" }
+      });
+    } catch (pdfError) {
+      console.error("PDF 解析錯誤:", pdfError);
+      return NextResponse.json(
+        { 
+          error: pdfError instanceof Error 
+            ? `PDF 解析失敗: ${pdfError.message}` 
+            : "PDF 解析失敗，請檢查檔案格式" 
+        },
+        { 
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        }
+      );
     }
-    if (rows.length === 0) {
-      return NextResponse.json({ error: "未解析到資料，請檢查 PDF 排版" }, { status: 422 });
-    }
-    return NextResponse.json({ rows });
   } catch (error) {
-    console.error("PDF 解析錯誤:", error);
+    console.error("API 錯誤:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "PDF 解析失敗" },
-      { status: 500 }
+      { 
+        error: error instanceof Error 
+          ? `伺服器錯誤: ${error.message}` 
+          : "未知錯誤" 
+      },
+      { 
+        status: 500,
+        headers: { "Content-Type": "application/json" }
+      }
     );
   }
 }
