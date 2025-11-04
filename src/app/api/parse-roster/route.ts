@@ -35,24 +35,40 @@ function tryRow(line: string): RosterRow | null {
 }
 
 export async function POST(req: Request) {
-  const form = await req.formData();
-  const file = form.get("file") as File | null;
-  if (!file) return NextResponse.json({ error: "缺少檔案" }, { status: 400 });
+  try {
+    const form = await req.formData();
+    const file = form.get("file") as File | null;
+    if (!file) return NextResponse.json({ error: "缺少檔案" }, { status: 400 });
 
-  const buf = Buffer.from(await file.arrayBuffer());
-  const parser = new PDFParse(buf);
-  const textResult = await parser.getText();
-  const lines = textResult.text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+    const arrayBuffer = await file.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    
+    // 在 Node.js 環境中禁用 worker 並直接傳遞 data
+    const parser = new PDFParse({
+      data: uint8Array,
+      useWorkerFetch: false,
+      verbosity: 0
+    });
+    
+    const textResult = await parser.getText();
+    const lines = textResult.text.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
 
-  const rows: RosterRow[] = [];
-  const seen = new Set<string>();
-  for (const line of lines) {
-    const r = tryRow(line);
-    if (r && !seen.has(r.name)) { rows.push(r); seen.add(r.name); }
+    const rows: RosterRow[] = [];
+    const seen = new Set<string>();
+    for (const line of lines) {
+      const r = tryRow(line);
+      if (r && !seen.has(r.name)) { rows.push(r); seen.add(r.name); }
+    }
+    if (rows.length === 0) {
+      return NextResponse.json({ error: "未解析到資料，請檢查 PDF 排版" }, { status: 422 });
+    }
+    return NextResponse.json({ rows });
+  } catch (error) {
+    console.error("PDF 解析錯誤:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "PDF 解析失敗" },
+      { status: 500 }
+    );
   }
-  if (rows.length === 0) {
-    return NextResponse.json({ error: "未解析到資料，請檢查 PDF 排版" }, { status: 422 });
-  }
-  return NextResponse.json({ rows });
 }
 

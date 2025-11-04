@@ -15,28 +15,44 @@ export default function Home() {
   async function parseRoster() {
     if (!pdfFile) return alert("請先選擇學員名單 PDF");
     setLoading(true);
-    const fd = new FormData();
-    fd.append("file", pdfFile);
-    const res = await fetch("/api/parse-roster", { method: "POST", body: fd });
-    const data = await res.json();
-    setLoading(false);
-    if (!res.ok) return alert(data.error || "解析名單失敗");
-    setRoster(data.rows);
-    alert(`名單解析成功：${data.rows.length} 筆`);
+    try {
+      const fd = new FormData();
+      fd.append("file", pdfFile);
+      const res = await fetch("/api/parse-roster", { method: "POST", body: fd });
+      const data = await res.json();
+      setLoading(false);
+      if (!res.ok) {
+        alert(data.error || "解析名單失敗");
+        return;
+      }
+      setRoster(data.rows);
+      alert(`名單解析成功：${data.rows.length} 筆`);
+    } catch (error) {
+      setLoading(false);
+      alert("解析失敗：" + (error instanceof Error ? error.message : "未知錯誤"));
+    }
   }
 
   async function mergeNow() {
     if (!txtFile) return alert("請先選擇 LINE 對話 txt");
     if (roster.length === 0) return alert("請先解析名單");
     setLoading(true);
-    const fd = new FormData();
-    fd.append("file", txtFile);
-    fd.append("roster", JSON.stringify(roster));
-    const res = await fetch("/api/merge", { method: "POST", body: fd });
-    const data = await res.json();
-    setLoading(false);
-    if (!res.ok) return alert(data.error || "合併失敗");
-    setMerged(data.rows);
+    try {
+      const fd = new FormData();
+      fd.append("file", txtFile);
+      fd.append("roster", JSON.stringify(roster));
+      const res = await fetch("/api/merge", { method: "POST", body: fd });
+      const data = await res.json();
+      setLoading(false);
+      if (!res.ok) {
+        alert(data.error || "合併失敗");
+        return;
+      }
+      setMerged(data.rows);
+    } catch (error) {
+      setLoading(false);
+      alert("合併失敗：" + (error instanceof Error ? error.message : "未知錯誤"));
+    }
   }
 
   function onCellEdit(idx: number, key: keyof MergedRow, value: string) {
@@ -47,21 +63,27 @@ export default function Home() {
 
   async function exportXlsx() {
     setLoading(true);
-    const res = await fetch("/api/export", {
-      method: "POST",
-      headers: { "Content-Type":"application/json" },
-      body: JSON.stringify({ rows: merged })
-    });
-    setLoading(false);
-    if (!res.ok) {
-      const data = await res.json().catch(()=> ({}));
-      return alert(data.error || "匯出失敗");
+    try {
+      const res = await fetch("/api/export", {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({ rows: merged })
+      });
+      setLoading(false);
+      if (!res.ok) {
+        const data = await res.json().catch(()=> ({}));
+        alert(data.error || "匯出失敗");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "整合結果.xlsx"; a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setLoading(false);
+      alert("匯出失敗：" + (error instanceof Error ? error.message : "未知錯誤"));
     }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "整合結果.xlsx"; a.click();
-    URL.revokeObjectURL(url);
   }
 
   return (
